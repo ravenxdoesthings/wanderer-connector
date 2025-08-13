@@ -1,7 +1,8 @@
 use axum::{
-    extract::Query,
+    extract::{Path, Query, State},
+    http::StatusCode,
     response::Json,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use opentelemetry::{global, KeyValue};
@@ -15,6 +16,16 @@ use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
+
+mod db;
+mod handlers;
+mod models;
+mod schema;
+
+use db::DbPool;
+use handlers::UserRepository;
+use models::{NewUser, UpdateUser, User};
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -115,28 +126,141 @@ async fn greet_json(Json(payload): Json<GreetingRequest>) -> Json<GreetingRespon
     })
 }
 
+// Database endpoints
+
+/// Create a new user
+#[instrument(skip(pool))]
+async fn create_user(
+    State(pool): State<DbPool>,
+    Json(new_user): Json<NewUser>,
+) -> Result<Json<User>, StatusCode> {
+    match UserRepository::create_user(&pool, new_user).await {
+        Ok(user) => {
+            info!("Created user with ID: {}", user.id);
+            Ok(Json(user))
+        }
+        Err(e) => {
+            tracing::error!("Failed to create user: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Get all users
+#[instrument(skip(pool))]
+async fn get_users(State(pool): State<DbPool>) -> Result<Json<Vec<User>>, StatusCode> {
+    match UserRepository::get_all_users(&pool).await {
+        Ok(users) => {
+            info!("Retrieved {} users", users.len());
+            Ok(Json(users))
+        }
+        Err(e) => {
+            tracing::error!("Failed to retrieve users: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Get a user by ID
+#[instrument(skip(pool))]
+async fn get_user(
+    State(pool): State<DbPool>,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<User>, StatusCode> {
+    match UserRepository::get_user_by_id(&pool, user_id).await {
+        Ok(user) => {
+            info!("Retrieved user with ID: {}", user.id);
+            Ok(Json(user))
+        }
+        Err(e) => {
+            tracing::error!("Failed to retrieve user {}: {}", user_id, e);
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+/// Update a user
+#[instrument(skip(pool))]
+async fn update_user(
+    State(pool): State<DbPool>,
+    Path(user_id): Path<Uuid>,
+    Json(update_user): Json<UpdateUser>,
+) -> Result<Json<User>, StatusCode> {
+    match UserRepository::update_user(&pool, user_id, update_user).await {
+        Ok(user) => {
+            info!("Updated user with ID: {}", user.id);
+            Ok(Json(user))
+        }
+        Err(e) => {
+            tracing::error!("Failed to update user {}: {}", user_id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Delete a user
+#[instrument(skip(pool))]
+async fn delete_user(
+    State(pool): State<DbPool>,
+    Path(user_id): Path<Uuid>,
+) -> Result<StatusCode, StatusCode> {
+    match UserRepository::delete_user(&pool, user_id).await {
+        Ok(true) => {
+            info!("Deleted user with ID: {}", user_id);
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Ok(false) => {
+            tracing::warn!("User {} not found for deletion", user_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete user {}: {}", user_id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 /// Create the Axum router with all routes
-fn create_router() -> Router {
+fn create_router(pool: DbPool) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/hello", get(hello))
         .route("/greet", post(greet_json))
+        // User endpoints
+        .route("/users", get(get_users))
+        .route("/users", post(create_user))
+        .route("/users/:id", get(get_user))
+        .route("/users/:id", put(update_user))
+        .route("/users/:id", delete(delete_user))
+        .with_state(pool)
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
     init_tracing()?;
 
     info!("Starting wanderer-connector API server");
 
-    // Create the router
-    let app = create_router();
+    // Set up database connection pool
+    info!("Setting up database connection pool");
+    let pool = db::establish_connection_pool()?;
+    info!("Database connection pool established");
+
+    // Create the router with database pool
+    let app = create_router(pool);
 
     // Start the server
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    info!("Server listening on http://0.0.0.0:3000");
+    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr = format!("{}:{}", host, port);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    info!("Server listening on http://{}", addr);
 
     axum::serve(listener, app).await?;
 
