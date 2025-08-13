@@ -66,6 +66,13 @@ services:
     env_file:
       - wanderer-conf.env
 
+  pgweb:
+    image: ghcr.io/sosedoff/pgweb:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - PGWEB_DATABASE_URL=postgresql://postgres:postgres@wanderer_db:5432/postgres
+
 volumes:
   db-data:
     driver: local

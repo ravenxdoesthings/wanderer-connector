@@ -25,3 +25,4 @@ target
 
 /target
 /wanderer-conf.env
+/docker-compose.local.yml
