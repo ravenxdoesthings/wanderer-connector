@@ -11,7 +11,7 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["trace"] }
 
 # Database
-diesel = { version = "2.1", features = ["postgres", "r2d2", "chrono", "uuid"] }
+diesel = { version = "2.2.12", features = ["postgres", "r2d2", "chrono", "uuid"] }
 r2d2 = "0.8"
 
 # Tracing and OpenTelemetry
@@ -31,3 +31,9 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
 dotenvy = "0.15"
+
+# For PostgreSQL notifications
+tokio-postgres = "0.7"
+futures-util = "0.3"
+futures = "0.3.31"
+futures-channel = "0.3.31"

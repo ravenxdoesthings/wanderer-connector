@@ -11,6 +11,29 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    map_system_v1 (id) {
+        id -> Uuid,
+        solar_system_id -> Int8,
+        name -> Text,
+        custom_name -> Text,
+        description -> Text,
+        tag -> Text,
+        labels -> Text,
+        status -> Int8,
+        visible -> Bool,
+        locked -> Bool,
+        position_x -> Int8,
+        position_y -> Int8,
+        added_at -> Timestamptz,
+        inserted_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        map_id -> Uuid,
+        temporary_name -> Text,
+        linked_sig_eve_id -> Text,
+    }
+}
+
 // If you have other tables, add them here
 // diesel::table! {
 //     posts (id) {
