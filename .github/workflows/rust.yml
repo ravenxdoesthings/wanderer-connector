@@ -8,15 +8,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  code-quality:
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v4
     - name: Check
-      run: cargo check --verbose
+      run: cargo check
     - name: Lint and Format
       run: cargo clippy && cargo fmt --check
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v4
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test
