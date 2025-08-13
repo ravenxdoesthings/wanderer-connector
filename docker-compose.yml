@@ -1,5 +1,7 @@
 version: '3.8'
 
+name: connector
+
 services:
   # Jaeger - Distributed Tracing
   jaeger:
@@ -11,9 +13,60 @@ services:
       - "16686:16686"  # Jaeger UI
       - "4317:4317"    # OTLP gRPC receiver
       - "4318:4318"    # OTLP HTTP receiver
-    networks:
-      - observability
 
-networks:
-  observability:
-    driver: bridge
+  eve-route-builder:
+    image: dansylvest/eve-route-builder:main
+    container_name: eve-route-builder
+    restart: always
+    environment:
+      - PORT=2001
+
+  wanderer-kills:
+    image: guarzo/wanderer-kills:latest
+    container_name: wanderer-kills
+    environment:
+      PORT: 4004
+      MIX_ENV: prod
+    ports:
+      - "4004:4004"
+    restart: unless-stopped
+
+  wanderer_db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=postgres
+
+  wanderer:
+    image: wandererltd/community-edition:latest
+    restart: always
+    command: sh -c "sleep 10 && /app/entrypoint.sh db createdb && /app/entrypoint.sh db migrate && /app/entrypoint.sh run"
+    depends_on:
+      - eve-route-builder
+      - wanderer_db
+    healthcheck:
+      disable: true
+    ports:
+      - 8000:8000
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@wanderer_db:5432/postgres
+      - CUSTOM_ROUTE_BASE_URL=http://eve-route-builder:2001
+      - WANDERER_KILLS_SERVICE_ENABLED=true
+      - WANDERER_KILLS_BASE_URL=ws://wanderer-kills:4004
+      - PHX_SERVER=true
+      - ECTO_IPV6=false
+      - ERL_AFLAGS=-proto_dist inet6_tcp
+      - ERL_MAX_PORTS=1024
+    env_file:
+      - wanderer-conf.env
+
+volumes:
+  db-data:
+    driver: local
+
